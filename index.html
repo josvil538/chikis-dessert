@@ -364,7 +364,11 @@ body.has-bar .cartbar{transform:none}
 .err:empty{display:none}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 fieldset.field{border:0;padding:0;margin:0 0 12px}
-.pay{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pay{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}
+.cash-chips{display:flex;flex-wrap:wrap;gap:8px}
+.cash-chips button{min-height:44px;padding:0 16px;border-radius:999px;border:2px solid var(--kraft);background:#fff;font-family:var(--titulo);font-weight:700;font-size:1rem;transition:all .15s}
+.cash-chips button:hover{background:var(--crema)}
+.cash-chips button[aria-pressed="true"]{background:var(--cafe);border-color:var(--cafe);color:var(--mostaza)}
 .pay label{position:relative}
 .pay input{position:absolute;opacity:0;inset:0;width:100%;height:100%;cursor:pointer;margin:0}
 .pay span{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:62px;border:2px solid #d8c7a6;background:#fff;border-radius:14px;font-weight:700;font-family:var(--titulo);font-size:1.02rem;transition:all .15s;text-align:center}
@@ -632,8 +636,8 @@ fieldset.field{border:0;padding:0;margin:0 0 12px}
           </div>
         </div>
         <div class="field">
-          <label for="fRef">Referencia</label>
-          <input id="fRef" name="referencia" placeholder="Ej: frente al parque, puerta verde" required>
+          <label for="fRef">Referencia <span class="opt">(opcional)</span></label>
+          <input id="fRef" name="referencia" placeholder="Ej: frente al parque, puerta verde">
           <span class="err" id="eRef"></span>
         </div>
         <div class="field">
@@ -643,17 +647,14 @@ fieldset.field{border:0;padding:0;margin:0 0 12px}
         </div>
         <fieldset class="field">
           <legend>Método de pago</legend>
-          <div class="pay" id="payGroup">
-            <label><input type="radio" name="pago" value="Yape"><span><i aria-hidden="true">📱</i>Yape</span></label>
-            <label><input type="radio" name="pago" value="Plin"><span><i aria-hidden="true">💳</i>Plin</span></label>
-            <label><input type="radio" name="pago" value="Efectivo"><span><i aria-hidden="true">💵</i>Efectivo</span></label>
-          </div>
+          <div class="pay" id="payGroup"></div>
           <span class="err" id="ePago"></span>
           <p class="hint" id="payHint" hidden>Al confirmar tu pedido te enviamos los datos para el pago.</p>
         </fieldset>
         <div class="field" id="cashField" hidden>
           <label for="fCash">¿Con cuánto pagas?</label>
-          <input id="fCash" name="efectivo" type="number" inputmode="decimal" min="0" step="0.10" placeholder="Ej: 50">
+          <div class="cash-chips" id="cashChips" role="group" aria-label="Montos rápidos"></div>
+          <input id="fCash" name="efectivo" type="number" inputmode="decimal" min="0" step="0.10" placeholder="Otro monto, ej: 50">
           <span class="vuelto" id="vuelto"></span>
           <span class="err" id="eCash"></span>
         </div>
@@ -697,6 +698,11 @@ const CONFIG = {
     atencion: "Sábados y Domingos",
     diasAbierto: [6, 0],              // 0 = domingo, 6 = sábado
     vigencia: "Promociones válidas del 1 al 30 de noviembre de 2026"
+  },
+  pagos: {
+    metodos: ["Yape", "Efectivo"],    // métodos que aparecen en el pedido
+    yapeNumero: "",                   // ej: "924 467 473" — si lo llenas, se muestra al elegir Yape
+    yapeTitular: ""                   // ej: "Joseph V." (opcional)
   },
   empanadas: {
     clasica: {
@@ -1268,7 +1274,6 @@ function validate() {
     ["fNombre", "eNombre", d.nombre.length < 2 ? "Escribe tu nombre." : ""],
     ["fMz", "eMz", !d.mz ? "Falta la manzana." : ""],
     ["fLote", "eLote", !d.lote ? "Falta el lote." : ""],
-    ["fRef", "eRef", d.referencia.length < 3 ? "Agrega una referencia para encontrarte." : ""],
     ["fCuando", "eCuando", !d.cuando ? "Elige para cuándo es tu pedido." : ""],
     [null, "ePago", !d.pago ? "Elige un método de pago." : ""]
   ];
@@ -1294,6 +1299,7 @@ function buildMessage(d) {
   const icon = it => it.type === "emp" ? (it.tipo === "premium" ? "👑" : "🥟") : it.type === "lim" ? "🍋" : it.type === "pack" ? "📦" : "⭐";
   const L = [];
   L.push(`🐶 *NUEVO PEDIDO · ${n.nombre}* 🥟`);
+  L.push("¡Hola! Quisiera hacer este pedido, por favor 🙌");
   L.push("");
   L.push("🧾 *Detalle del pedido:*");
   cart.forEach((it, i) => {
@@ -1310,15 +1316,17 @@ function buildMessage(d) {
   L.push("👤 *Datos del cliente:*");
   L.push(`• Nombre: ${d.nombre}`);
   L.push(`• 📍 Mz ${d.mz} Lt ${d.lote} — ${n.zona}`);
-  L.push(`• 🧭 Referencia: ${d.referencia}`);
+  if (d.referencia) L.push(`• 🧭 Referencia: ${d.referencia}`);
   L.push(`• 🗓️ Para: ${d.cuando}${isOpenToday() ? "" : " (pedido programado)"}`);
   if (d.pago === "Efectivo") {
     const v = parseFloat(d.efectivo);
-    L.push(`• 💵 Pago: Efectivo — paga con ${money(v)} (vuelto ${money(v - t.total)})`);
-  } else L.push(`• 📱 Pago: ${d.pago}`);
+    L.push(v > t.total
+      ? `• 💵 Pago: Efectivo — paga con ${money(v)} (vuelto ${money(v - t.total)})`
+      : `• 💵 Pago: Efectivo — monto exacto ${money(t.total)}`);
+  } else L.push(`• ${PAGO_ICON[d.pago] || "💰"} Pago: ${d.pago} — ${money(t.total)}${d.pago === "Yape" ? " (envío la captura por aquí)" : ""}`);
   if (d.notas) L.push(`• 📝 Notas: ${d.notas}`);
   L.push("");
-  L.push("¡Hola! Quisiera confirmar este pedido, por favor 🙌🧡");
+  L.push("¡Gracias! 🧡");
   return L.join("\n");
 }
 
@@ -1327,22 +1335,61 @@ function sendOrder() {
   const d = validate();
   if (!d) return;
   const url = waLink(buildMessage(d));
-  const w = window.open(url, "_blank", "noopener");
-  if (!w) location.href = url;
+  // Con "noopener" window.open siempre devuelve null, por eso se corta el opener a mano
+  const w = window.open(url, "_blank");
+  if (w) w.opener = null;
+  else location.href = url;
   toast("📲 Abriendo WhatsApp… ¡solo presiona enviar!");
 }
 
+const PAGO_ICON = { Yape: "📱", Plin: "💳", Efectivo: "💵", Transferencia: "🏦" };
+
+function renderPagos() {
+  $("#payGroup").innerHTML = CONFIG.pagos.metodos.map(m =>
+    `<label><input type="radio" name="pago" value="${esc(m)}"><span><i aria-hidden="true">${PAGO_ICON[m] || "💰"}</i>${esc(m)}</span></label>`).join("");
+}
+
+// Montos rápidos para efectivo: exacto y los billetes redondos que alcanzan
+function cashOptions(total) {
+  const out = [total];
+  for (const step of [10, 20, 50, 100, 200]) {
+    const v = Math.ceil(total / step) * step;
+    if (v > total && !out.includes(v)) out.push(v);
+  }
+  return out.slice(0, 4);
+}
+
+let chipsTotal = null;
 function updateCash() {
   const f = $("#pedido"), pago = (f.querySelector('input[name="pago"]:checked') || {}).value;
+  const total = totals().total, v = parseFloat(f.efectivo.value);
   $("#cashField").hidden = pago !== "Efectivo";
-  $("#payHint").hidden = !(pago === "Yape" || pago === "Plin");
-  const v = parseFloat(f.efectivo.value), total = totals().total;
-  $("#vuelto").textContent = pago === "Efectivo" && v >= total ? `Tu vuelto: ${money(v - total)}` : "";
+
+  const P = CONFIG.pagos, hint = $("#payHint");
+  hint.hidden = !pago || pago === "Efectivo";
+  hint.textContent = pago === "Yape" && P.yapeNumero
+    ? `Yapea ${money(total)} al ${P.yapeNumero}${P.yapeTitular ? ` (${P.yapeTitular})` : ""} y envía la captura por WhatsApp.`
+    : "Al confirmar tu pedido te enviamos los datos para el pago.";
+
+  if (chipsTotal !== total) {
+    chipsTotal = total;
+    $("#cashChips").innerHTML = cashOptions(total).map((n, i) =>
+      `<button type="button" data-action="cash-chip" data-v="${n.toFixed(2)}">${i === 0 ? "Exacto · " : ""}${money(n)}</button>`).join("");
+  }
+  $$("#cashChips button").forEach(b => b.setAttribute("aria-pressed", parseFloat(b.dataset.v) === v));
+  $("#vuelto").textContent = pago === "Efectivo" && v >= total ? (v > total ? `Tu vuelto: ${money(v - total)}` : "Pagas el monto exacto 👍") : "";
+}
+
+function saveForm() {
+  const d = formData();
+  save(FORM_KEY, { nombre: d.nombre, mz: d.mz, lote: d.lote, referencia: d.referencia, pago: d.pago });
 }
 
 function restoreForm() {
   const saved = load(FORM_KEY, {}), f = $("#pedido");
   ["nombre", "mz", "lote", "referencia"].forEach(k => { if (typeof saved[k] === "string") f[k].value = saved[k]; });
+  const r = saved.pago && $$('input[name="pago"]', f).find(x => x.value === saved.pago);
+  if (r) r.checked = true;
 }
 
 /* =========================================================
@@ -1416,6 +1463,11 @@ document.addEventListener("click", e => {
     if (confirm("¿Vaciar todo el carrito?")) { cart = []; cartChanged(false); $('[data-action="close-cart"]').focus(); }
   }
   else if (a === "send") sendOrder();
+  else if (a === "cash-chip") {
+    $("#fCash").value = el.dataset.v;
+    setErr("fCash", "eCash", "");
+    updateCash();
+  }
 });
 
 document.addEventListener("keydown", e => {
@@ -1437,13 +1489,12 @@ document.addEventListener("keydown", e => {
 });
 
 $("#pedido").addEventListener("input", e => {
-  const d = formData();
-  save(FORM_KEY, { nombre: d.nombre, mz: d.mz, lote: d.lote, referencia: d.referencia });
+  saveForm();
   if (e.target.getAttribute("aria-invalid") === "true" && e.target.value.trim()) setErr(e.target.id, e.target.getAttribute("aria-describedby"), "");
   updateCash();
 });
 $("#pedido").addEventListener("change", e => {
-  if (e.target.name === "pago") { $("#ePago").textContent = ""; $("#payGroup").classList.remove("invalid"); updateCash(); if (e.target.value === "Efectivo") setTimeout(() => $("#fCash").focus(), 50); }
+  if (e.target.name === "pago") { $("#ePago").textContent = ""; $("#payGroup").classList.remove("invalid"); saveForm(); updateCash(); }
 });
 $("#pedido").addEventListener("submit", e => { e.preventDefault(); sendOrder(); });
 
@@ -1454,6 +1505,7 @@ renderStatic();
 renderMenu();
 renderPacks();
 renderEntrega();
+renderPagos();
 restoreForm();
 renderCart();
 </script>
